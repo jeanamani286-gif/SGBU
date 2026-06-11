@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>SGBU - Catalogue</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+    <h1>Bibliotheque Universitaire</h1>
+    <nav>
+        <span id="bienvenue"></span>
+        <a href="/logout">Se deconnecter</a>
+    </nav>
+</header>
+
+<main class="container">
+    <h2>Catalogue des ressources</h2>
+
+    <input type="text" id="recherche" placeholder="Rechercher un titre..." onkeyup="filtrerCatalogue()">
+
+    <table id="tableCatalogue">
+        <thead>
+            <tr>
+                <th>Titre</th>
+                <th>Auteur</th>
+                <th>Type</th>
+                <th>Categorie</th>
+                <th>Disponible</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="corpsTable">
+        </tbody>
+    </table>
+</main>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
