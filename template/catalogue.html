@@ -11,12 +11,16 @@
     <h1>Bibliotheque Universitaire</h1>
     <nav>
         <span id="bienvenue"></span>
+        <a href="/mes-emprunts">Mes emprunts</a>
+        <a id="lienAdmin" href="/admin" style="display:none">Espace bibliothecaire</a>
         <a href="/logout">Se deconnecter</a>
     </nav>
 </header>
 
 <main class="container">
     <h2>Catalogue des ressources</h2>
+
+    <p id="messageCatalogue"></p>
 
     <input type="text" id="recherche" placeholder="Rechercher un titre..." onkeyup="filtrerCatalogue()">
 
