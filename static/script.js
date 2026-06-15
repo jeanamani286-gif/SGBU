@@ -1,352 +1,218 @@
-// ============================================================
-// SCRIPT JS DU PROJET SGBU - VERSION SIMPLE POUR ETUDIANT L1
-// ============================================================
+// Script JS du projet SGBU
 
+// Petits raccourcis utilises partout dans le fichier
+function $(id) { return document.getElementById(id); }
 
-// --- Petite fonction pour afficher un message dans la page ---
-function afficherMessage(texte, type) {
-    var p = document.getElementById("message");
-    if (p != null) {
-        p.textContent = texte;
-        p.className = type;
-    }
+function getJSON(url, suite) {
+    fetch(url).then(function (r) { return r.json(); }).then(suite);
 }
 
-
-// ============================================================
-// PAGE DE CONNEXION
-// ============================================================
-
-function envoyerConnexion(evenement) {
-    // On empeche le formulaire de recharger la page
-    evenement.preventDefault();
-
-    // On recupere ce que l'utilisateur a tape
-    var email = document.getElementById("email").value;
-    var motDePasse = document.getElementById("mot_de_passe").value;
-
-    // Verification simple : les champs ne doivent pas etre vides
-    if (email == "" || motDePasse == "") {
-        afficherMessage("Veuillez remplir tous les champs.", "erreur");
-        return;
-    }
-
-    // On prepare les donnees a envoyer au serveur Python
-    var donnees = {
-        email: email,
-        mot_de_passe: motDePasse
-    };
-
-    // On envoie au serveur
-    fetch("/api/login", {
+function postJSON(url, donnees, suite) {
+    fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(donnees)
-    }).then(reponseRecue).then(traiterConnexion);
+        body: donnees ? JSON.stringify(donnees) : null
+    }).then(function (r) { return r.json(); }).then(suite);
 }
 
-// Etape intermediaire : transformer la reponse en objet JS
-function reponseRecue(reponse) {
-    return reponse.json();
+function afficherMessage(idZone, texte, type) {
+    var p = $(idZone);
+    if (p != null) { p.textContent = texte; p.className = type; }
 }
 
-// On regarde si la connexion a marche ou pas
-function traiterConnexion(resultat) {
-    if (resultat.succes == true) {
-        window.location.href = "/catalogue";
-    } else {
-        afficherMessage(resultat.erreur, "erreur");
-    }
+function chargerNomUtilisateur(u) {
+    var z = $("bienvenue");
+    if (z != null) z.textContent = "Bonjour " + u.prenom;
+    var a = $("lienAdmin");
+    if (a != null && u.role == "bibliothecaire") a.style.display = "inline";
 }
 
 
-// ============================================================
-// PAGE D'INSCRIPTION
-// ============================================================
-
-function envoyerInscription(evenement) {
-    evenement.preventDefault();
-
-    var nom = document.getElementById("nom").value;
-    var prenom = document.getElementById("prenom").value;
-    var email = document.getElementById("email").value;
-    var motDePasse = document.getElementById("mot_de_passe").value;
-
-    if (nom == "" || prenom == "" || email == "" || motDePasse == "") {
-        afficherMessage("Veuillez remplir tous les champs.", "erreur");
+// ----- Connexion -----
+function envoyerConnexion(ev) {
+    ev.preventDefault();
+    var email = $("email").value;
+    var mdp = $("mot_de_passe").value;
+    if (email == "" || mdp == "") {
+        afficherMessage("message", "Veuillez remplir tous les champs.", "erreur");
         return;
     }
-    if (motDePasse.length < 6) {
-        afficherMessage("Le mot de passe doit contenir au moins 6 caracteres.", "erreur");
-        return;
-    }
+    postJSON("/api/login", { email: email, mot_de_passe: mdp }, function (res) {
+        if (res.succes) window.location.href = "/catalogue";
+        else afficherMessage("message", res.erreur, "erreur");
+    });
+}
 
+
+// ----- Inscription -----
+function envoyerInscription(ev) {
+    ev.preventDefault();
     var donnees = {
-        nom: nom,
-        prenom: prenom,
-        email: email,
-        mot_de_passe: motDePasse
+        nom: $("nom").value,
+        prenom: $("prenom").value,
+        email: $("email").value,
+        mot_de_passe: $("mot_de_passe").value
     };
-
-    fetch("/api/inscription", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(donnees)
-    }).then(reponseRecue).then(traiterInscription);
+    if (donnees.nom == "" || donnees.prenom == "" || donnees.email == "" || donnees.mot_de_passe == "") {
+        afficherMessage("message", "Veuillez remplir tous les champs.", "erreur");
+        return;
+    }
+    if (donnees.mot_de_passe.length < 6) {
+        afficherMessage("message", "Le mot de passe doit contenir au moins 6 caracteres.", "erreur");
+        return;
+    }
+    postJSON("/api/inscription", donnees, function (res) {
+        if (res.succes) afficherMessage("message", "Inscription reussie ! Vous pouvez vous connecter.", "message");
+        else afficherMessage("message", res.erreur, "erreur");
+    });
 }
 
-function traiterInscription(resultat) {
-    if (resultat.succes == true) {
-        afficherMessage("Inscription reussie ! Vous pouvez vous connecter.", "message");
-    } else {
-        afficherMessage(resultat.erreur, "erreur");
-    }
-}
 
-
-// ============================================================
-// PAGE DU CATALOGUE
-// ============================================================
-
-function chargerNomUtilisateur(utilisateur) {
-    var zone = document.getElementById("bienvenue");
-    if (zone != null) {
-        zone.textContent = "Bonjour " + utilisateur.prenom;
-    }
-    // Lien vers l'espace admin visible uniquement pour les bibliothecaires
-    var lienAdmin = document.getElementById("lienAdmin");
-    if (lienAdmin != null && utilisateur.role == "bibliothecaire") {
-        lienAdmin.style.display = "inline";
-    }
-}
-
+// ----- Catalogue -----
 function afficherRessources(ressources) {
-    var corps = document.getElementById("corpsTable");
+    var corps = $("corpsTable");
     corps.innerHTML = "";
-
-    // On parcourt chaque ressource et on cree une ligne pour chacune
     for (var i = 0; i < ressources.length; i++) {
         var r = ressources[i];
+        var action = r.disponible > 0
+            ? '<button onclick="emprunter(' + r.id + ')">Emprunter</button>'
+            : "Indisponible";
+        var l = document.createElement("tr");
+        l.innerHTML = "<td>" + r.titre + "</td><td>" + r.auteur + "</td><td>" + r.type +
+                      "</td><td>" + r.categorie + "</td><td>" + r.disponible + "</td><td>" + action + "</td>";
+        corps.appendChild(l);
+    }
+}
 
-        // On choisit le bon bouton selon la disponibilite
-        var boutonAction;
-        if (r.disponible > 0) {
-            boutonAction = '<button onclick="emprunter(' + r.id + ')">Emprunter</button>';
+function emprunter(id) {
+    postJSON("/api/emprunter/" + id, null, function (res) {
+        if (res.succes) {
+            afficherMessage("messageCatalogue", "Emprunt enregistre. Retour avant le " + res.date_retour_prevue + ".", "message");
+            getJSON("/api/ressources", afficherRessources);
         } else {
-            boutonAction = "Indisponible";
-        }
-
-        var ligne = document.createElement("tr");
-        ligne.innerHTML =
-            "<td>" + r.titre + "</td>" +
-            "<td>" + r.auteur + "</td>" +
-            "<td>" + r.type + "</td>" +
-            "<td>" + r.categorie + "</td>" +
-            "<td>" + r.disponible + "</td>" +
-            "<td>" + boutonAction + "</td>";
-
-        corps.appendChild(ligne);
-    }
-}
-
-function afficherMessageCatalogue(texte, type) {
-    var p = document.getElementById("messageCatalogue");
-    if (p != null) {
-        p.textContent = texte;
-        p.className = type;
-    }
-}
-
-function rechargerCatalogue() {
-    fetch("/api/ressources").then(reponseRecue).then(afficherRessources);
-}
-
-function emprunter(idRessource) {
-    fetch("/api/emprunter/" + idRessource, { method: "POST" })
-        .then(reponseRecue)
-        .then(function (resultat) {
-            if (resultat.succes == true) {
-                afficherMessageCatalogue("Emprunt enregistre. Retour avant le " + resultat.date_retour_prevue + ".", "message");
-                rechargerCatalogue();
-            } else {
-                afficherMessageCatalogue(resultat.erreur, "erreur");
-            }
-        });
-}
-
-// Recherche : on cache les lignes qui ne contiennent pas le texte tape
-function filtrerCatalogue() {
-    var saisie = document.getElementById("recherche").value.toLowerCase();
-    var lignes = document.querySelectorAll("#tableCatalogue tbody tr");
-
-    for (var i = 0; i < lignes.length; i++) {
-        var titre = lignes[i].cells[0].textContent.toLowerCase();
-        if (titre.indexOf(saisie) > -1) {
-            lignes[i].style.display = "";
-        } else {
-            lignes[i].style.display = "none";
-        }
-    }
-}
-
-
-// ============================================================
-// AU CHARGEMENT DE LA PAGE : ON BRANCHE LES BONNES FONCTIONS
-// ============================================================
-
-// Page de connexion
-if (document.getElementById("formLogin") != null) {
-    document.getElementById("formLogin").onsubmit = envoyerConnexion;
-}
-
-// Page d'inscription
-if (document.getElementById("formInscription") != null) {
-    document.getElementById("formInscription").onsubmit = envoyerInscription;
-}
-
-// Page du catalogue
-if (document.getElementById("corpsTable") != null) {
-    fetch("/api/utilisateur").then(reponseRecue).then(chargerNomUtilisateur);
-    fetch("/api/ressources").then(reponseRecue).then(afficherRessources);
-}
-
-
-// ============================================================
-// PAGE "MES EMPRUNTS"
-// ============================================================
-
-function afficherMesEmprunts(donnees) {
-    // Bandeau de suspension
-    if (donnees.suspension_jusqu_au != null) {
-        document.getElementById("messageSuspension").textContent =
-            "Votre compte est suspendu jusqu'au " + donnees.suspension_jusqu_au + ".";
-    }
-
-    var corpsEmprunts = document.getElementById("corpsEmprunts");
-    corpsEmprunts.innerHTML = "";
-
-    for (var i = 0; i < donnees.emprunts.length; i++) {
-        var e = donnees.emprunts[i];
-        var ligne = document.createElement("tr");
-        ligne.innerHTML =
-            "<td>" + e.titre + "</td>" +
-            "<td>" + e.type + "</td>" +
-            "<td>" + e.date_emprunt + "</td>" +
-            "<td>" + e.date_retour_prevue + "</td>" +
-            "<td><button onclick=\"retourner(" + e.id + ")\">Retourner</button></td>";
-        corpsEmprunts.appendChild(ligne);
-    }
-}
-
-function retourner(idEmprunt) {
-    fetch("/api/retourner/" + idEmprunt, { method: "POST" })
-        .then(reponseRecue)
-        .then(function (resultat) {
-            if (resultat.succes == true) {
-                if (resultat.sanction != "") {
-                    alert(resultat.sanction);
-                }
-                window.location.reload();
-            } else {
-                alert(resultat.erreur);
-            }
-        });
-}
-
-if (document.getElementById("corpsEmprunts") != null) {
-    fetch("/api/utilisateur").then(reponseRecue).then(chargerNomUtilisateur);
-    fetch("/api/mes-emprunts").then(reponseRecue).then(afficherMesEmprunts);
-}
-
-
-// ============================================================
-// PAGE ADMINISTRATION (BIBLIOTHECAIRE)
-// ============================================================
-
-function afficherStats(stats) {
-    document.getElementById("statEtudiants").textContent = stats.nb_etudiants;
-    document.getElementById("statRessources").textContent = stats.nb_ressources;
-    document.getElementById("statEmprunts").textContent = stats.nb_emprunts_actifs;
-    document.getElementById("statRetards").textContent = stats.nb_retards;
-}
-
-function afficherCategoriesAdmin(categories) {
-    var select = document.getElementById("categorie");
-    for (var i = 0; i < categories.length; i++) {
-        var opt = document.createElement("option");
-        opt.value = categories[i].id;
-        opt.textContent = categories[i].nom;
-        select.appendChild(opt);
-    }
-}
-
-function afficherEmpruntsAdmin(emprunts) {
-    var corps = document.getElementById("corpsEmpruntsAdmin");
-    corps.innerHTML = "";
-    for (var i = 0; i < emprunts.length; i++) {
-        var e = emprunts[i];
-        var bouton = "";
-        if (e.statut == "en_cours") {
-            bouton = '<button onclick="validerRetour(' + e.id + ')">Valider retour</button>';
-        }
-        var ligne = document.createElement("tr");
-        ligne.innerHTML =
-            "<td>" + e.utilisateur + "</td>" +
-            "<td>" + e.titre + "</td>" +
-            "<td>" + e.date_emprunt + "</td>" +
-            "<td>" + e.date_retour_prevue + "</td>" +
-            "<td>" + e.statut + "</td>" +
-            "<td>" + bouton + "</td>";
-        corps.appendChild(ligne);
-    }
-}
-
-function envoyerAjoutRessource(evenement) {
-    evenement.preventDefault();
-    var donnees = {
-        titre: document.getElementById("titre").value,
-        auteur: document.getElementById("auteur").value,
-        type: document.getElementById("type").value,
-        quantite: parseInt(document.getElementById("quantite").value),
-        categories_id: parseInt(document.getElementById("categorie").value)
-    };
-    fetch("/api/admin/ressources", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(donnees)
-    }).then(reponseRecue).then(function (resultat) {
-        var msg = document.getElementById("messageAdmin");
-        if (resultat.succes == true) {
-            msg.textContent = "Ressource ajoutee.";
-            msg.className = "message";
-            chargerToutAdmin();
-        } else {
-            msg.textContent = resultat.erreur;
-            msg.className = "erreur";
+            afficherMessage("messageCatalogue", res.erreur, "erreur");
         }
     });
 }
 
-function validerRetour(idEmprunt) {
-    fetch("/api/retourner/" + idEmprunt, { method: "POST" })
-        .then(reponseRecue)
-        .then(function (resultat) {
-            if (resultat.succes == true) {
-                chargerToutAdmin();
-            } else {
-                alert(resultat.erreur);
-            }
-        });
+function filtrerCatalogue() {
+    var saisie = $("recherche").value.toLowerCase();
+    var lignes = document.querySelectorAll("#tableCatalogue tbody tr");
+    for (var i = 0; i < lignes.length; i++) {
+        var titre = lignes[i].cells[0].textContent.toLowerCase();
+        lignes[i].style.display = titre.indexOf(saisie) > -1 ? "" : "none";
+    }
+}
+
+
+// ----- Mes emprunts -----
+function afficherMesEmprunts(donnees) {
+    if (donnees.suspension_jusqu_au != null) {
+        $("messageSuspension").textContent =
+            "Votre compte est suspendu jusqu'au " + donnees.suspension_jusqu_au + ".";
+    }
+    var corps = $("corpsEmprunts");
+    corps.innerHTML = "";
+    for (var i = 0; i < donnees.emprunts.length; i++) {
+        var e = donnees.emprunts[i];
+        var l = document.createElement("tr");
+        l.innerHTML = "<td>" + e.titre + "</td><td>" + e.type + "</td><td>" + e.date_emprunt +
+                      "</td><td>" + e.date_retour_prevue +
+                      "</td><td><button onclick=\"retourner(" + e.id + ")\">Retourner</button></td>";
+        corps.appendChild(l);
+    }
+}
+
+function retourner(id) {
+    postJSON("/api/retourner/" + id, null, function (res) {
+        if (res.succes) {
+            if (res.sanction != "") alert(res.sanction);
+            window.location.reload();
+        } else {
+            alert(res.erreur);
+        }
+    });
+}
+
+
+// ----- Admin (bibliothecaire) -----
+function afficherStats(s) {
+    $("statEtudiants").textContent = s.nb_etudiants;
+    $("statRessources").textContent = s.nb_ressources;
+    $("statEmprunts").textContent = s.nb_emprunts_actifs;
+    $("statRetards").textContent = s.nb_retards;
+}
+
+function afficherCategoriesAdmin(cats) {
+    var sel = $("categorie");
+    for (var i = 0; i < cats.length; i++) {
+        var o = document.createElement("option");
+        o.value = cats[i].id;
+        o.textContent = cats[i].nom;
+        sel.appendChild(o);
+    }
+}
+
+function afficherEmpruntsAdmin(emprunts) {
+    var corps = $("corpsEmpruntsAdmin");
+    corps.innerHTML = "";
+    for (var i = 0; i < emprunts.length; i++) {
+        var e = emprunts[i];
+        var bouton = e.statut == "en_cours"
+            ? '<button onclick="validerRetour(' + e.id + ')">Valider retour</button>'
+            : "";
+        var l = document.createElement("tr");
+        l.innerHTML = "<td>" + e.utilisateur + "</td><td>" + e.titre + "</td><td>" + e.date_emprunt +
+                      "</td><td>" + e.date_retour_prevue + "</td><td>" + e.statut + "</td><td>" + bouton + "</td>";
+        corps.appendChild(l);
+    }
 }
 
 function chargerToutAdmin() {
-    fetch("/api/admin/stats").then(reponseRecue).then(afficherStats);
-    fetch("/api/admin/emprunts").then(reponseRecue).then(afficherEmpruntsAdmin);
+    getJSON("/api/admin/stats", afficherStats);
+    getJSON("/api/admin/emprunts", afficherEmpruntsAdmin);
 }
 
-if (document.getElementById("formAjoutRessource") != null) {
-    fetch("/api/utilisateur").then(reponseRecue).then(chargerNomUtilisateur);
-    fetch("/api/admin/categories").then(reponseRecue).then(afficherCategoriesAdmin);
+function envoyerAjoutRessource(ev) {
+    ev.preventDefault();
+    var donnees = {
+        titre: $("titre").value,
+        auteur: $("auteur").value,
+        type: $("type").value,
+        quantite: parseInt($("quantite").value),
+        categories_id: parseInt($("categorie").value)
+    };
+    postJSON("/api/admin/ressources", donnees, function (res) {
+        afficherMessage("messageAdmin", res.succes ? "Ressource ajoutee." : res.erreur, res.succes ? "message" : "erreur");
+        if (res.succes) chargerToutAdmin();
+    });
+}
+
+function validerRetour(id) {
+    postJSON("/api/retourner/" + id, null, function (res) {
+        if (res.succes) chargerToutAdmin();
+        else alert(res.erreur);
+    });
+}
+
+
+// ----- Initialisation : on branche les fonctions selon la page ouverte -----
+if ($("formLogin") != null) $("formLogin").onsubmit = envoyerConnexion;
+if ($("formInscription") != null) $("formInscription").onsubmit = envoyerInscription;
+
+if ($("corpsTable") != null) {
+    getJSON("/api/utilisateur", chargerNomUtilisateur);
+    getJSON("/api/ressources", afficherRessources);
+}
+
+if ($("corpsEmprunts") != null) {
+    getJSON("/api/utilisateur", chargerNomUtilisateur);
+    getJSON("/api/mes-emprunts", afficherMesEmprunts);
+}
+
+if ($("formAjoutRessource") != null) {
+    getJSON("/api/utilisateur", chargerNomUtilisateur);
+    getJSON("/api/admin/categories", afficherCategoriesAdmin);
     chargerToutAdmin();
-    document.getElementById("formAjoutRessource").onsubmit = envoyerAjoutRessource;
+    $("formAjoutRessource").onsubmit = envoyerAjoutRessource;
 }
