@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS emprunts (
     FOREIGN KEY (ressources_id) REFERENCES ressources(id)
 );
 
--- Donnees de test
 INSERT INTO categories (nom) VALUES
     ('Informatique'),
     ('Mathematiques'),

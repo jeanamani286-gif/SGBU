@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>SGBU - Catalogue</title>
+    <style>
+
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+            --navy-950: #0b1530;
+            --navy-900: #0f1c3d;
+            --navy-800: #14264d;
+            --border-soft: rgba(255, 255, 255, 0.08);
+            --gold: #d4af37;
+            --gold-soft: #e9cf7a;
+            --blue-accent: #3b5fcf;
+            --blue-accent-hover: #4a6fe0;
+            --text-light: #eef1f8;
+            --text-muted: #a9b4cf;
+            --text-faint: #7c89ad;
+            --success: #6fcf97;
+            --danger: #e57373;
+            --shadow-deep: 0 20px 50px rgba(0, 0, 0, 0.45);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(ellipse at top left, var(--navy-800) 0%, var(--navy-950) 60%);
+            color: var(--text-light);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        header {
+            background: linear-gradient(180deg, var(--navy-900) 0%, var(--navy-950) 100%);
+            border-bottom: 1px solid var(--border-soft);
+            padding: 1.1rem 2.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        header h1 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            font-size: 1.4rem;
+            margin: 0;
+            color: var(--text-light);
+        }
+
+        header h1::before {
+            content: "📖 ";
+            color: var(--gold);
+        }
+
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 1.6rem;
+        }
+
+        nav span#bienvenue {
+            color: var(--gold-soft);
+            font-weight: 600;
+            font-size: 0.92rem;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.92rem;
+            font-weight: 500;
+            border-bottom: 1px solid transparent;
+            transition: color 0.2s ease;
+        }
+
+        nav a:hover {
+            color: var(--gold-soft);
+            border-bottom-color: var(--gold-soft);
+        }
+
+        main.container {
+            max-width: 1080px;
+            margin: 0 auto;
+            padding: 2.5rem 2rem 4rem;
+        }
+
+        h2 {
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            font-size: 1.6rem;
+            color: var(--text-light);
+            margin: 0 0 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        h2::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, var(--gold), transparent);
+        }
+        #recherche {
+            width: 100%;
+            max-width: 420px;
+            display: block;
+            margin-bottom: 1.4rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-soft);
+            border-radius: 8px;
+            padding: 0.7rem 0.9rem;
+            color: var(--text-light);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s ease, background 0.2s ease;
+        }
+
+        #recherche::placeholder {
+            color: var(--text-faint);
+        }
+
+        #recherche:focus {
+            border-color: var(--gold);
+            background: rgba(255, 255, 255, 0.08);
+        }
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background: linear-gradient(160deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01));
+            border: 1px solid var(--border-soft);
+            border-radius: 14px;
+            box-shadow: var(--shadow-deep);
+            overflow: hidden;
+        }
+
+        thead {
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        th {
+            text-align: left;
+            padding: 0.85rem 1.1rem;
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: var(--gold-soft);
+            font-weight: 700;
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        td {
+            padding: 0.85rem 1.1rem;
+            font-size: 0.92rem;
+            color: var(--text-light);
+            border-bottom: 1px solid var(--border-soft);
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        button {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-light);
+            border: 1px solid var(--border-soft);
+            border-radius: 9px;
+            padding: 0.45rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        button:hover {
+            background: var(--gold);
+            color: var(--navy-950);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
+
+        .badge-ok {
+            background: rgba(111, 207, 151, 0.15);
+            color: var(--success);
+        }
+
+        .badge-non {
+            background: rgba(229, 115, 115, 0.15);
+            color: var(--danger);
+        }
+
+        @media (max-width: 720px) {
+            header {
+                flex-direction: column;
+                gap: 0.8rem;
+                align-items: flex-start;
+                padding: 1rem 1.4rem;
+            }
+
+            main.container {
+                padding: 1.6rem 1.2rem 3rem;
+            }
+
+            table, thead, tbody, th, td, tr {
+                display: block;
+            }
+
+            thead {
+                display: none;
+            }
+
+            tbody tr {
+                border: 1px solid var(--border-soft);
+                border-radius: 10px;
+                margin-bottom: 0.8rem;
+                padding: 0.4rem 0;
+            }
+
+            td {
+                border-bottom: none;
+                padding: 0.4rem 1.1rem;
+            }
+
+            td::before {
+                content: attr(data-label) ": ";
+                color: var(--text-faint);
+                font-weight: 600;
+                margin-right: 0.3rem;
+            }
+        }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Bibliotheque Universitaire EPSI</h1>
+    <nav>
+        <span id="bienvenue"></span>
+        <a href="/mes-emprunts">Mes emprunts</a>
+        <a id="lienAdmin" href="/admin" style="display:none">Espace bibliothecaire</a>
+        <a href="/logout">Se deconnecter</a>
+    </nav>
+</header>
+
+<main class="container">
+    <h2>Catalogue des ressources</h2>
+
+    <p id="messageCatalogue"></p>
+
+    <input type="text" id="recherche" placeholder="Rechercher un titre..." onkeyup="filtrerCatalogue()">
+
+    <table id="tableCatalogue">
+        <thead>
+            <tr>
+                <th>Titre</th>
+                <th>Auteur</th>
+                <th>Type</th>
+                <th>Categorie</th>
+                <th>Disponible</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="corpsTable">
+        </tbody>
+    </table>
+</main>
+
+<script src="/static/script.js"></script>
+</body>
+</html>

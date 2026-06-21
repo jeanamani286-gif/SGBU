@@ -1,21 +1,15 @@
-# Routes reservees au bibliothecaire :
-# ajouter une ressource, voir tous les emprunts,
-# statistiques du tableau de bord.
-
 import datetime
+from zoneinfo import ZoneInfo
 import flask
 
 import database
 
 bp = flask.Blueprint("admin", __name__)
 
-
-# Petit verificateur : seul un bibliothecaire peut acceder a ces routes
 def est_bibliothecaire():
     return flask.session.get("role") == "bibliothecaire"
 
 
-# --- Page HTML de l'espace bibliothecaire ---
 
 @bp.route("/admin")
 def page_admin():
@@ -26,7 +20,6 @@ def page_admin():
     return flask.render_template("admin.html")
 
 
-# --- Gestion des ressources ---
 
 @bp.route("/api/admin/ressources", methods=["POST"])
 def api_ajouter_ressource():
@@ -46,7 +39,6 @@ def api_ajouter_ressource():
     return flask.jsonify({"succes": True})
 
 
-# --- Listes pour les tableaux ---
 
 @bp.route("/api/admin/emprunts")
 def api_emprunts():
@@ -89,7 +81,6 @@ def api_categories():
     return flask.jsonify(cats)
 
 
-# --- Tableau de bord (statistiques) ---
 
 @bp.route("/api/admin/stats")
 def api_stats():
