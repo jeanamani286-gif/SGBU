@@ -89,6 +89,9 @@ def api_stats():
 
     db = database.get_db()
     curseur = db.cursor()
+    database.verifier_reservations_expirees(curseur)
+    db.commit()
+
     curseur.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'etudiant'")
     nb_etudiants = curseur.fetchone()["n"]
     curseur.execute("SELECT COUNT(*) AS n FROM ressources")
@@ -100,10 +103,13 @@ def api_stats():
         (datetime.datetime.now(),)
     )
     nb_retards = curseur.fetchone()["n"]
+    curseur.execute("SELECT COUNT(*) AS n FROM reservations WHERE statut IN ('en_attente', 'disponible')")
+    nb_reservations = curseur.fetchone()["n"]
     db.close()
     return flask.jsonify({
         "nb_etudiants": nb_etudiants,
         "nb_ressources": nb_ressources,
         "nb_emprunts_actifs": nb_emprunts_actifs,
-        "nb_retards": nb_retards
+        "nb_retards": nb_retards,
+        "nb_reservations": nb_reservations
     })

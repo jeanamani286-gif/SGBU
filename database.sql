@@ -38,6 +38,28 @@ CREATE TABLE IF NOT EXISTS emprunts (
     FOREIGN KEY (users_id) REFERENCES users(id),
     FOREIGN KEY (ressources_id) REFERENCES ressources(id)
 );
+CREATE TABLE IF NOT EXISTS reservations (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    users_id INT NOT NULL,
+    ressources_id INT NOT NULL,
+    date_reservation DATETIME NOT NULL,
+    date_mise_a_disposition DATETIME,
+    date_expiration DATETIME,
+    statut VARCHAR(20) DEFAULT 'en_attente',
+    FOREIGN KEY (users_id) REFERENCES users(id),
+    FOREIGN KEY (ressources_id) REFERENCES ressources(id)
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    users_id INT NOT NULL,
+    type VARCHAR(30) NOT NULL,
+    message TEXT NOT NULL,
+    lu TINYINT(1) DEFAULT 0,
+    date_creation DATETIME NOT NULL,
+    FOREIGN KEY (users_id) REFERENCES users(id)
+);
+
 
 INSERT INTO categories (nom) VALUES
     ('Informatique'),
@@ -55,5 +77,4 @@ INSERT INTO ressources (titre, auteur, type, quantite, disponible, categories_id
     ('Ordinateur portable HP', 'HP', 'materiel', 5, 5, 1),
     ('Calculatrice TI-83', 'Texas Instruments', 'materiel', 10, 10, 2);
 
--- Apres avoir cree un compte via /inscription, executer pour devenir bibliothecaire :
--- UPDATE users SET role = 'bibliothecaire' WHERE email = 'votre.email@exemple.fr';
+

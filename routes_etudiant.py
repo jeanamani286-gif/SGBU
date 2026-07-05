@@ -108,6 +108,8 @@ def api_ressources():
     try:
         db = database.get_db()
         curseur = db.cursor()
+        database.verifier_reservations_expirees(curseur)
+        db.commit()
         curseur.execute("""
             SELECT r.id, r.titre, r.auteur, r.type, r.disponible, c.nom AS categorie
             FROM ressources r
@@ -115,6 +117,16 @@ def api_ressources():
             ORDER BY r.titre
         """)
         ressources = curseur.fetchall()
+
+        user_id = flask.session["user_id"]
+        curseur.execute(
+            "SELECT ressources_id, statut FROM reservations WHERE users_id = %s AND statut IN ('en_attente', 'disponible')",
+            (user_id,)
+        )
+        reservations_actives = {r["ressources_id"]: r["statut"] for r in curseur.fetchall()}
+        for r in ressources:
+            r["ma_reservation"] = reservations_actives.get(r["id"])
+
         db.close()
         return flask.jsonify(ressources)
     except Exception as e:
@@ -186,7 +198,8 @@ def api_retourner(emprunt_id):
             "UPDATE emprunts SET date_retour_reelle = %s, statut = 'retourne' WHERE id = %s",
             (maintenant, emprunt_id)
         )
-        curseur.execute("UPDATE ressources SET disponible = disponible + 1 WHERE id = %s", (emprunt["ressources_id"],))
+
+        database.promouvoir_reservation_suivante(curseur, emprunt["ressources_id"])
 
         message_sanction = ""
         if maintenant > emprunt["date_retour_prevue"]:
@@ -197,6 +210,11 @@ def api_retourner(emprunt_id):
             curseur.execute("UPDATE users SET date_fin_suspension = %s WHERE id = %s", (nouvelle_fin, emprunt["users_id"]))
             message_sanction = ("Retour avec " + str(jours_retard) + " jour(s) de retard. "
                 "Suspension de " + str(jours_suspension) + " jour(s) jusqu'au " + nouvelle_fin.strftime("%d/%m/%Y") + ".")
+
+            curseur.execute("SELECT email FROM users WHERE id = %s", (emprunt["users_id"],))
+            email_etudiant = curseur.fetchone()["email"]
+            database.creer_notification(curseur, emprunt["users_id"], "retard", message_sanction)
+            database.envoyer_email(email_etudiant, "Retard constate sur un emprunt", message_sanction)
 
         db.commit()
         db.close()
@@ -218,6 +236,8 @@ def api_mes_emprunts():
         user_id = flask.session["user_id"]
         db = database.get_db()
         curseur = db.cursor()
+        database.verifier_reservations_expirees(curseur)
+        db.commit()
 
         curseur.execute("""
             SELECT e.id, e.date_emprunt, e.date_retour_prevue, e.statut,
@@ -246,3 +266,214 @@ def api_mes_emprunts():
         })
     except Exception as e:
         return flask.jsonify({"erreur": str(e)}), 500
+
+
+@bp.route("/api/reserver/<int:ressource_id>", methods=["POST"])
+def api_reserver(ressource_id):
+    if "user_id" not in flask.session:
+        return flask.jsonify({"succes": False, "erreur": "Non connecte"}), 401
+    try:
+        user_id = flask.session["user_id"]
+        db = database.get_db()
+        curseur = db.cursor()
+        database.verifier_reservations_expirees(curseur)
+
+        if database.utilisateur_suspendu(curseur, user_id):
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Votre compte est suspendu suite a un retard."})
+
+        curseur.execute("SELECT * FROM ressources WHERE id = %s", (ressource_id,))
+        ressource = curseur.fetchone()
+        if not ressource:
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Ressource introuvable."})
+        if ressource["disponible"] > 0:
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Cette ressource est disponible, vous pouvez l'emprunter directement."})
+
+        curseur.execute(
+            "SELECT id FROM reservations WHERE users_id = %s AND ressources_id = %s AND statut IN ('en_attente', 'disponible')",
+            (user_id, ressource_id)
+        )
+        if curseur.fetchone():
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Vous avez deja une reservation active pour cette ressource."})
+
+        curseur.execute(
+            "INSERT INTO reservations (users_id, ressources_id, date_reservation, statut) VALUES (%s, %s, %s, 'en_attente')",
+            (user_id, ressource_id, datetime.datetime.now())
+        )
+        db.commit()
+        db.close()
+        return flask.jsonify({"succes": True})
+
+    except Exception as e:
+        return flask.jsonify({"succes": False, "erreur": "Erreur serveur : " + str(e)}), 500
+
+@bp.route("/api/recuperer-reservation/<int:reservation_id>", methods=["POST"])
+def api_recuperer_reservation(reservation_id):
+    """Convertit une reservation 'disponible' (non expiree) en emprunt,
+    lorsque l'etudiant vient effectivement chercher la ressource."""
+    if "user_id" not in flask.session:
+        return flask.jsonify({"succes": False, "erreur": "Non connecte"}), 401
+    try:
+        user_id = flask.session["user_id"]
+        db = database.get_db()
+        curseur = db.cursor()
+        database.verifier_reservations_expirees(curseur)
+        db.commit()
+
+        curseur.execute("SELECT * FROM reservations WHERE id = %s", (reservation_id,))
+        reservation = curseur.fetchone()
+        if not reservation or reservation["users_id"] != user_id:
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Reservation introuvable."})
+        if reservation["statut"] != "disponible":
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Cette reservation n'est pas (ou plus) disponible."})
+
+        if database.compter_emprunts_actifs(curseur, user_id) >= database.MAX_EMPRUNTS_SIMULTANES:
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Vous avez atteint la limite de 5 emprunts."})
+
+        curseur.execute("SELECT * FROM ressources WHERE id = %s", (reservation["ressources_id"],))
+        ressource = curseur.fetchone()
+
+        date_emprunt = datetime.datetime.now()
+        date_retour_prevue = database.calculer_date_retour(ressource["type"])
+        curseur.execute(
+            "INSERT INTO emprunts (users_id, ressources_id, date_emprunt, date_retour_prevue, statut) VALUES (%s, %s, %s, %s, 'en_cours')",
+            (user_id, ressource["id"], date_emprunt, date_retour_prevue)
+        )
+        curseur.execute("UPDATE reservations SET statut = 'recuperee' WHERE id = %s", (reservation_id,))
+        db.commit()
+        db.close()
+        return flask.jsonify({"succes": True, "date_retour_prevue": date_retour_prevue.strftime("%d/%m/%Y %H:%M")})
+
+    except Exception as e:
+        return flask.jsonify({"succes": False, "erreur": "Erreur serveur : " + str(e)}), 500
+
+@bp.route("/api/annuler-reservation/<int:reservation_id>", methods=["POST"])
+def api_annuler_reservation(reservation_id):
+    if "user_id" not in flask.session:
+        return flask.jsonify({"succes": False, "erreur": "Non connecte"}), 401
+    try:
+        user_id = flask.session["user_id"]
+        db = database.get_db()
+        curseur = db.cursor()
+
+        curseur.execute("SELECT * FROM reservations WHERE id = %s", (reservation_id,))
+        reservation = curseur.fetchone()
+        if not reservation or reservation["users_id"] != user_id:
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Reservation introuvable."})
+        if reservation["statut"] not in ("en_attente", "disponible"):
+            db.close()
+            return flask.jsonify({"succes": False, "erreur": "Cette reservation ne peut plus etre annulee."})
+
+        etait_disponible = reservation["statut"] == "disponible"
+        curseur.execute("UPDATE reservations SET statut = 'annulee' WHERE id = %s", (reservation_id,))
+
+        # Si la reservation annulee avait deja une copie reservee, on la
+        # libere immediatement pour le suivant dans la file.
+        if etait_disponible:
+            database.promouvoir_reservation_suivante(curseur, reservation["ressources_id"])
+
+        db.commit()
+        db.close()
+        return flask.jsonify({"succes": True})
+
+    except Exception as e:
+        return flask.jsonify({"succes": False, "erreur": "Erreur serveur : " + str(e)}), 500
+
+
+@bp.route("/api/mes-reservations")
+def api_mes_reservations():
+    if "user_id" not in flask.session:
+        return flask.jsonify({"erreur": "Non connecte"}), 401
+    try:
+        user_id = flask.session["user_id"]
+        db = database.get_db()
+        curseur = db.cursor()
+        database.verifier_reservations_expirees(curseur)
+        db.commit()
+
+        curseur.execute("""
+            SELECT res.id, res.date_reservation, res.date_mise_a_disposition, res.date_expiration, res.statut,
+                   r.titre, r.auteur, r.type
+            FROM reservations res
+            JOIN ressources r ON res.ressources_id = r.id
+            WHERE res.users_id = %s AND res.statut IN ('en_attente', 'disponible')
+            ORDER BY res.date_reservation DESC
+        """, (user_id,))
+        reservations = curseur.fetchall()
+        db.close()
+        return flask.jsonify([{
+            "id": r["id"], "titre": r["titre"], "auteur": r["auteur"], "type": r["type"],
+            "statut": r["statut"],
+            "date_reservation": _formater_date(r["date_reservation"]),
+            "date_expiration": _formater_date(r["date_expiration"])
+        } for r in reservations])
+    except Exception as e:
+        return flask.jsonify({"erreur": str(e)}), 500
+
+
+@bp.route("/api/notifications")
+def api_notifications():
+    if "user_id" not in flask.session:
+        return flask.jsonify({"erreur": "Non connecte"}), 401
+    try:
+        user_id = flask.session["user_id"]
+        db = database.get_db()
+        curseur = db.cursor()
+        database.verifier_reservations_expirees(curseur)
+        db.commit()
+
+        curseur.execute(
+            "SELECT id, type, message, lu, date_creation FROM notifications WHERE users_id = %s ORDER BY date_creation DESC LIMIT 30",
+            (user_id,)
+        )
+        notifications = curseur.fetchall()
+        curseur.execute(
+            "SELECT COUNT(*) AS n FROM notifications WHERE users_id = %s AND lu = 0",
+            (user_id,)
+        )
+        non_lues = curseur.fetchone()["n"]
+        db.close()
+        return flask.jsonify({
+            "non_lues": non_lues,
+            "notifications": [{
+                "id": n["id"], "type": n["type"], "message": n["message"], "lu": bool(n["lu"]),
+                "date_creation": _formater_date(n["date_creation"])
+            } for n in notifications]
+        })
+    except Exception as e:
+        return flask.jsonify({"erreur": str(e)}), 500
+
+@bp.route("/api/notifications/lire/<int:notif_id>", methods=["POST"])
+def api_notification_lire(notif_id):
+    if "user_id" not in flask.session:
+        return flask.jsonify({"succes": False, "erreur": "Non connecte"}), 401
+    db = database.get_db()
+    curseur = db.cursor()
+    curseur.execute(
+        "UPDATE notifications SET lu = 1 WHERE id = %s AND users_id = %s",
+        (notif_id, flask.session["user_id"])
+    )
+    db.commit()
+    db.close()
+    return flask.jsonify({"succes": True})
+
+@bp.route("/api/notifications/tout-lire", methods=["POST"])
+def api_notifications_tout_lire():
+    if "user_id" not in flask.session:
+        return flask.jsonify({"succes": False, "erreur": "Non connecte"}), 401
+    db = database.get_db()
+    curseur = db.cursor()
+    curseur.execute(
+        "UPDATE notifications SET lu = 1 WHERE users_id = %s",
+        (flask.session["user_id"],)
+    )
+    db.commit()
+    db.close()
+    return flask.jsonify({"succes": True})
