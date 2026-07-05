@@ -26,17 +26,22 @@ def api_ajouter_ressource():
     if not est_bibliothecaire():
         return flask.jsonify({"succes": False, "erreur": "Acces refuse"}), 403
 
-    donnees = flask.request.get_json()
     db = database.get_db()
-    curseur = db.cursor()
-    curseur.execute(
-        "INSERT INTO ressources (titre, auteur, type, quantite, disponible, categories_id) VALUES (%s, %s, %s, %s, %s, %s)",
-        (donnees["titre"], donnees["auteur"], donnees["type"],
-         donnees["quantite"], donnees["quantite"], donnees.get("categories_id"))
-    )
-    db.commit()
-    db.close()
-    return flask.jsonify({"succes": True})
+    try:
+        donnees = flask.request.get_json()
+        curseur = db.cursor()
+        curseur.execute(
+            "INSERT INTO ressources (titre, auteur, type, quantite, disponible, categories_id) VALUES (%s, %s, %s, %s, %s, %s)",
+            (donnees["titre"], donnees["auteur"], donnees["type"],
+             donnees["quantite"], donnees["quantite"], donnees.get("categories_id"))
+        )
+        db.commit()
+        return flask.jsonify({"succes": True})
+    except Exception as e:
+        db.rollback()
+        return flask.jsonify({"succes": False, "erreur": str(e)}), 400
+    finally:
+        db.close()
 
 
 
@@ -46,27 +51,32 @@ def api_emprunts():
         return flask.jsonify({"erreur": "Acces refuse"}), 403
 
     db = database.get_db()
-    curseur = db.cursor()
-    curseur.execute("""
-        SELECT e.id, e.date_emprunt, e.date_retour_prevue, e.date_retour_reelle, e.statut,
-               r.titre, u.nom, u.prenom, u.email
-        FROM emprunts e
-        JOIN ressources r ON e.ressources_id = r.id
-        JOIN users u ON e.users_id = u.id
-        ORDER BY e.date_emprunt DESC
-    """)
-    lignes = curseur.fetchall()
-    db.close()
-    return flask.jsonify([{
-        "id": l["id"],
-        "titre": l["titre"],
-        "utilisateur": l["prenom"] + " " + l["nom"],
-        "email": l["email"],
-        "date_emprunt": l["date_emprunt"].strftime("%d/%m/%Y %H:%M") if l["date_emprunt"] else "",
-        "date_retour_prevue": l["date_retour_prevue"].strftime("%d/%m/%Y %H:%M") if l["date_retour_prevue"] else "",
-        "date_retour_reelle": l["date_retour_reelle"].strftime("%d/%m/%Y %H:%M") if l["date_retour_reelle"] else "",
-        "statut": l["statut"]
-    } for l in lignes])
+    try:
+        curseur = db.cursor()
+        curseur.execute("""
+            SELECT e.id, e.date_emprunt, e.date_retour_prevue, e.date_retour_reelle, e.statut,
+                   r.titre, u.nom, u.prenom, u.email
+            FROM emprunts e
+            JOIN ressources r ON e.ressources_id = r.id
+            JOIN users u ON e.users_id = u.id
+            ORDER BY e.date_emprunt DESC
+        """)
+        lignes = curseur.fetchall()
+        return flask.jsonify([{
+            "id": l["id"],
+            "titre": l["titre"],
+            "utilisateur": l["prenom"] + " " + l["nom"],
+            "email": l["email"],
+            "date_emprunt": l["date_emprunt"].strftime("%d/%m/%Y %H:%M") if l["date_emprunt"] else "",
+            "date_retour_prevue": l["date_retour_prevue"].strftime("%d/%m/%Y %H:%M") if l["date_retour_prevue"] else "",
+            "date_retour_prevue_raw": l["date_retour_prevue"].isoformat() if l["date_retour_prevue"] else "",
+            "date_retour_reelle": l["date_retour_reelle"].strftime("%d/%m/%Y %H:%M") if l["date_retour_reelle"] else "",
+            "statut": l["statut"]
+        } for l in lignes])
+    except Exception as e:
+        return flask.jsonify({"erreur": str(e)}), 500
+    finally:
+        db.close()
 
 
 @bp.route("/api/admin/categories")
@@ -74,11 +84,15 @@ def api_categories():
     if not est_bibliothecaire():
         return flask.jsonify({"erreur": "Acces refuse"}), 403
     db = database.get_db()
-    curseur = db.cursor()
-    curseur.execute("SELECT id, nom FROM categories ORDER BY nom")
-    cats = curseur.fetchall()
-    db.close()
-    return flask.jsonify(cats)
+    try:
+        curseur = db.cursor()
+        curseur.execute("SELECT id, nom FROM categories ORDER BY nom")
+        cats = curseur.fetchall()
+        return flask.jsonify(cats)
+    except Exception as e:
+        return flask.jsonify({"erreur": str(e)}), 500
+    finally:
+        db.close()
 
 
 
@@ -88,28 +102,32 @@ def api_stats():
         return flask.jsonify({"erreur": "Acces refuse"}), 403
 
     db = database.get_db()
-    curseur = db.cursor()
-    database.verifier_reservations_expirees(curseur)
-    db.commit()
+    try:
+        curseur = db.cursor()
+        database.verifier_reservations_expirees(curseur)
+        db.commit()
 
-    curseur.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'etudiant'")
-    nb_etudiants = curseur.fetchone()["n"]
-    curseur.execute("SELECT COUNT(*) AS n FROM ressources")
-    nb_ressources = curseur.fetchone()["n"]
-    curseur.execute("SELECT COUNT(*) AS n FROM emprunts WHERE statut = 'en_cours'")
-    nb_emprunts_actifs = curseur.fetchone()["n"]
-    curseur.execute(
-        "SELECT COUNT(*) AS n FROM emprunts WHERE statut = 'en_cours' AND date_retour_prevue < %s",
-        (datetime.datetime.now(),)
-    )
-    nb_retards = curseur.fetchone()["n"]
-    curseur.execute("SELECT COUNT(*) AS n FROM reservations WHERE statut IN ('en_attente', 'disponible')")
-    nb_reservations = curseur.fetchone()["n"]
-    db.close()
-    return flask.jsonify({
-        "nb_etudiants": nb_etudiants,
-        "nb_ressources": nb_ressources,
-        "nb_emprunts_actifs": nb_emprunts_actifs,
-        "nb_retards": nb_retards,
-        "nb_reservations": nb_reservations
-    })
+        curseur.execute("SELECT COUNT(*) AS n FROM users WHERE role = 'etudiant'")
+        nb_etudiants = curseur.fetchone()["n"]
+        curseur.execute("SELECT COUNT(*) AS n FROM ressources")
+        nb_ressources = curseur.fetchone()["n"]
+        curseur.execute("SELECT COUNT(*) AS n FROM emprunts WHERE statut = 'en_cours'")
+        nb_emprunts_actifs = curseur.fetchone()["n"]
+        curseur.execute(
+            "SELECT COUNT(*) AS n FROM emprunts WHERE statut = 'en_cours' AND date_retour_prevue < %s",
+            (datetime.datetime.now(),)
+        )
+        nb_retards = curseur.fetchone()["n"]
+        curseur.execute("SELECT COUNT(*) AS n FROM reservations WHERE statut IN ('en_attente', 'disponible')")
+        nb_reservations = curseur.fetchone()["n"]
+        return flask.jsonify({
+            "nb_etudiants": nb_etudiants,
+            "nb_ressources": nb_ressources,
+            "nb_emprunts_actifs": nb_emprunts_actifs,
+            "nb_retards": nb_retards,
+            "nb_reservations": nb_reservations
+        })
+    except Exception as e:
+        return flask.jsonify({"erreur": str(e)}), 500
+    finally:
+        db.close()

@@ -123,31 +123,57 @@ def promouvoir_reservation_suivante(curseur, ressource_id):
 
 
 def verifier_reservations_expirees(curseur):
-    # On n'a pas de programme qui tourne tout seul en arriere-plan
-    # (pas de tache planifiee dans ce projet), donc on verifie les
-    # reservations expirees a chaque fois qu'une page est chargee.
-
     maintenant = datetime.datetime.now()
+
     curseur.execute(
-        "SELECT id, users_id, ressources_id FROM reservations "
-        "WHERE statut = 'disponible' AND date_expiration < %s",
+        """
+        SELECT id, users_id, ressources_id
+        FROM reservations
+        WHERE (statut = 'disponible' OR statut = 'en_attente')
+        AND date_expiration IS NOT NULL
+        AND date_expiration < %s
+        """,
         (maintenant,)
     )
+
     reservations_expirees = curseur.fetchall()
 
     for reservation in reservations_expirees:
-        curseur.execute("UPDATE reservations SET statut = 'expiree' WHERE id = %s", (reservation["id"],))
 
-        curseur.execute("SELECT email, prenom FROM users WHERE id = %s", (reservation["users_id"],))
+        curseur.execute(
+            "UPDATE reservations SET statut = 'expiree' WHERE id = %s",
+            (reservation["id"],)
+        )
+
+        curseur.execute(
+            "SELECT email, prenom FROM users WHERE id = %s",
+            (reservation["users_id"],)
+        )
         etudiant = curseur.fetchone()
-        curseur.execute("SELECT titre FROM ressources WHERE id = %s", (reservation["ressources_id"],))
+
+        curseur.execute(
+            "SELECT titre FROM ressources WHERE id = %s",
+            (reservation["ressources_id"],)
+        )
         ressource = curseur.fetchone()
 
-        message = ("Bonjour " + etudiant["prenom"] + ", votre reservation pour \"" + ressource["titre"] + "\" "
-                   "a expire car vous n'etes pas venu(e) la chercher dans les 48h.")
+        message = (
+            "Bonjour " + etudiant["prenom"] +
+            ", votre réservation pour \"" + ressource["titre"] +
+            "\" a expiré car vous n'êtes pas venu(e) la récupérer dans les 48 heures."
+        )
 
-        creer_notification(curseur, reservation["users_id"], "reservation_expiree", message)
-        envoyer_email(etudiant["email"], "Votre reservation a expire", message)
+        creer_notification(
+            curseur,
+            reservation["users_id"],
+            "reservation_expiree",
+            message
+        )
 
-        # On propose la place au suivant dans la file d'attente.
+        envoyer_email(
+            etudiant["email"],
+            "Votre réservation a expiré",
+            message
+        )
+
         promouvoir_reservation_suivante(curseur, reservation["ressources_id"])

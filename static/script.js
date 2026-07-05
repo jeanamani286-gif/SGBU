@@ -31,7 +31,11 @@ function envoyerConnexion(evenement) {
     .then(function(reponse) { return reponse.json(); })
     .then(function(resultat) {
         if (resultat.succes === true) {
-            window.location.href = "/catalogue";
+            if (resultat.role === "bibliothecaire") {
+                window.location.href = "/admin";
+            } else {
+                window.location.href = "/catalogue";
+            }
         } else {
             afficherMessage(resultat.erreur || "Email ou mot de passe incorrect.", "erreur");
             btn.disabled = false;
@@ -96,6 +100,11 @@ function envoyerInscription(evenement) {
 function chargerNomUtilisateur(utilisateur) {
     var el = document.getElementById("bienvenue");
     if (el) el.textContent = "Bonjour " + utilisateur.prenom;
+    // Afficher le lien "Tableau de bord" si bibliothecaire
+    var lienAdmin = document.getElementById("lienAdmin");
+    if (lienAdmin && utilisateur.role === "bibliothecaire") {
+        lienAdmin.style.display = "inline";
+    }
 }
 
 function afficherRessources(ressources) {
@@ -367,12 +376,60 @@ function chargerNotifications() {
 
 function marquerNotificationLue(notifId) {
     fetch("/api/notifications/lire/" + notifId, { method: "POST" })
-        .then(function() { chargerNotifications(); });
+        .then(function() { 
+// Page admin
+if (document.getElementById("corpsEmpruntsAdmin") !== null) {
+    fetch("/api/utilisateur")
+        .then(function(r) { return r.json(); })
+        .then(chargerNomUtilisateur)
+        .catch(function() {});
+
+    fetch("/api/admin/stats")
+        .then(function(r) { return r.json(); })
+        .then(chargerStats)
+        .catch(function() {});
+
+    fetch("/api/admin/emprunts")
+        .then(function(r) { return r.json(); })
+        .then(afficherEmpruntsAdmin)
+        .catch(function() {});
+
+    chargerCategoriesAdmin();
+
+    var formAdmin = document.getElementById("formAjoutRessource");
+    if (formAdmin) formAdmin.onsubmit = soumettreAjoutRessource;
+}
+
+chargerNotifications(); });
 }
 
 function toutMarquerLu() {
     fetch("/api/notifications/tout-lire", { method: "POST" })
-        .then(function() { chargerNotifications(); });
+        .then(function() { 
+// Page admin
+if (document.getElementById("corpsEmpruntsAdmin") !== null) {
+    fetch("/api/utilisateur")
+        .then(function(r) { return r.json(); })
+        .then(chargerNomUtilisateur)
+        .catch(function() {});
+
+    fetch("/api/admin/stats")
+        .then(function(r) { return r.json(); })
+        .then(chargerStats)
+        .catch(function() {});
+
+    fetch("/api/admin/emprunts")
+        .then(function(r) { return r.json(); })
+        .then(afficherEmpruntsAdmin)
+        .catch(function() {});
+
+    chargerCategoriesAdmin();
+
+    var formAdmin = document.getElementById("formAjoutRessource");
+    if (formAdmin) formAdmin.onsubmit = soumettreAjoutRessource;
+}
+
+chargerNotifications(); });
 }
 
 function basculerPanneauNotifications() {
@@ -389,6 +446,135 @@ document.addEventListener("click", function(evenement) {
     }
 });
 
+
+
+// ==============================================================
+// PAGE ADMIN (ESPACE BIBLIOTHECAIRE)
+// ==============================================================
+
+function chargerStats(stats) {
+    var el;
+    el = document.getElementById("statEtudiants");   if (el) el.textContent = stats.nb_etudiants;
+    el = document.getElementById("statRessources");  if (el) el.textContent = stats.nb_ressources;
+    el = document.getElementById("statEmprunts");    if (el) el.textContent = stats.nb_emprunts_actifs;
+    el = document.getElementById("statRetards");     if (el) el.textContent = stats.nb_retards;
+    el = document.getElementById("statReservations"); if (el) el.textContent = stats.nb_reservations || 0;
+}
+
+function chargerCategoriesAdmin() {
+    var sel = document.getElementById("categorie");
+    if (!sel) return;
+    fetch("/api/admin/categories")
+        .then(function(r) { return r.json(); })
+        .then(function(cats) {
+            sel.innerHTML = "";
+            cats.forEach(function(c) {
+                var opt = document.createElement("option");
+                opt.value = c.id;
+                opt.textContent = c.nom;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(function() {});
+}
+
+function afficherEmpruntsAdmin(emprunts) {
+    var corps = document.getElementById("corpsEmpruntsAdmin");
+    if (!corps) return;
+    corps.innerHTML = "";
+
+    if (!emprunts || emprunts.length === 0) {
+        var ligne = document.createElement("tr");
+        ligne.innerHTML = "<td colspan='6' style='text-align:center;color:#7c89ad;'>Aucun emprunt enregistre.</td>";
+        corps.appendChild(ligne);
+        return;
+    }
+
+    var maintenant = new Date();
+    for (var i = 0; i < emprunts.length; i++) {
+        var e = emprunts[i];
+        var enRetard = e.statut === "en_cours" && new Date(e.date_retour_prevue_raw) < maintenant;
+        var badge = e.statut === "retourne"
+            ? '<span class="badge badge-ok">Retourne</span>'
+            : (enRetard
+                ? '<span class="badge badge-retard">En retard</span>'
+                : '<span class="badge badge-ok">En cours</span>');
+
+        var action = e.statut === "en_cours"
+            ? '<button onclick="retournerAdmin(' + e.id + ', this)">Retourner</button>'
+            : "-";
+
+        var ligne = document.createElement("tr");
+        ligne.innerHTML =
+            "<td>" + (e.utilisateur || "") + "</td>" +
+            "<td>" + (e.titre || "") + "</td>" +
+            "<td>" + (e.date_emprunt || "") + "</td>" +
+            "<td>" + (e.date_retour_prevue || "") + "</td>" +
+            "<td>" + badge + "</td>" +
+            "<td>" + action + "</td>";
+        corps.appendChild(ligne);
+    }
+}
+
+function retournerAdmin(empruntId, btn) {
+    btn.disabled = true;
+    btn.textContent = "...";
+    fetch("/api/retourner/" + empruntId, { method: "POST" })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+        if (res.succes) {
+            if (res.sanction) alert(res.sanction);
+            window.location.reload();
+        } else {
+            alert(res.erreur || "Erreur.");
+            btn.disabled = false;
+            btn.textContent = "Retourner";
+        }
+    })
+    .catch(function() { alert("Erreur reseau."); btn.disabled = false; btn.textContent = "Retourner"; });
+}
+
+function soumettreAjoutRessource(evenement) {
+    evenement.preventDefault();
+    var btn = document.querySelector("#formAjoutRessource button[type='submit']");
+    btn.disabled = true;
+    btn.textContent = "Ajout...";
+
+    var donnees = {
+        titre:        document.getElementById("titre").value.trim(),
+        auteur:       document.getElementById("auteur").value.trim(),
+        type:         document.getElementById("type").value,
+        quantite:     parseInt(document.getElementById("quantite").value),
+        categories_id: parseInt(document.getElementById("categorie").value)
+    };
+
+    fetch("/api/admin/ressources", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(donnees)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+        var msg = document.getElementById("messageAdmin");
+        if (res.succes) {
+            if (msg) { msg.textContent = "Ressource ajoutee avec succes !"; msg.style.color = "#6fcf97"; }
+            document.getElementById("formAjoutRessource").reset();
+            chargerCategoriesAdmin();
+            btn.disabled = false;
+            btn.textContent = "Ajouter";
+        } else {
+            if (msg) { msg.textContent = res.erreur || "Erreur."; msg.style.color = "#e57373"; }
+            btn.disabled = false;
+            btn.textContent = "Ajouter";
+        }
+    })
+    .catch(function() {
+        var msg = document.getElementById("messageAdmin");
+        if (msg) { msg.textContent = "Erreur reseau."; msg.style.color = "#e57373"; }
+        btn.disabled = false;
+        btn.textContent = "Ajouter";
+    });
+}
 
 if (document.getElementById("formLogin") !== null) {
     document.getElementById("formLogin").onsubmit = envoyerConnexion;
@@ -420,6 +606,30 @@ if (document.getElementById("corpsEmprunts") !== null) {
         .then(function(r) { return r.json(); })
         .then(afficherMesReservations)
         .catch(function() {});
+}
+
+
+// Page admin
+if (document.getElementById("corpsEmpruntsAdmin") !== null) {
+    fetch("/api/utilisateur")
+        .then(function(r) { return r.json(); })
+        .then(chargerNomUtilisateur)
+        .catch(function() {});
+
+    fetch("/api/admin/stats")
+        .then(function(r) { return r.json(); })
+        .then(chargerStats)
+        .catch(function() {});
+
+    fetch("/api/admin/emprunts")
+        .then(function(r) { return r.json(); })
+        .then(afficherEmpruntsAdmin)
+        .catch(function() {});
+
+    chargerCategoriesAdmin();
+
+    var formAdmin = document.getElementById("formAjoutRessource");
+    if (formAdmin) formAdmin.onsubmit = soumettreAjoutRessource;
 }
 
 chargerNotifications();
